@@ -1,0 +1,1406 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>装修预算 - 全能单文件版</title>
+    
+    <!-- 核心库 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+    <!-- 【核心数据槽】 -->
+    <script id="initial-data" type="application/json">{"projects":[{"id":"1765962363234","name":"默认预算项目","cachedTotal":0,"data":{"sections":[{"id":"sec_1","title":"一、示例工程分类","items":[{"id":"1","name":"示例项目","unit":"M2","qty":0,"price":0,"remark":"请开始您的编辑"}]},{"id":"sec_mgmt","title":"管理费用","items":[{"id":"mgmt_1","name":"工程直接费","unit":"元","qty":0,"price":0,"remark":""},{"id":"mgmt_2","name":"工程管理费","unit":"元","qty":7,"price":0,"remark":""},{"id":"mgmt_3","name":"项目经理服务费","unit":"元","qty":5,"price":0,"remark":""},{"id":"mgmt_4","name":"施工总造价","unit":"元","qty":0,"price":0,"remark":""},{"id":"mgmt_5","name":"设计师跟踪服务费","unit":"元","qty":0,"price":0,"remark":""},{"id":"mgmt_6","name":"税金","unit":"元","qty":1,"price":0,"remark":""}]}],"projectTitle":"默认预算项目","labelConfigs":{}},"updatedAt":1765963107320}],"activeProjectId":"1765962363234","defaultTemplate":null,"summaryTitle":"项目汇总表"}</script>
+
+    <style>
+        body { background-color: #050505; color: #d1d5db; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        
+        .tactical-input { 
+            background: transparent; border: 1px solid transparent; outline: none; transition: all 0.2s; 
+            width: 100%; padding: 4px; font-family: 'Courier New', monospace; font-weight: bold; 
+            display: block; resize: none; overflow: hidden; line-height: 1.5;
+        }
+        .tactical-input:focus { border-bottom: 1px solid #ff6600; color: #fff; }
+        
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+
+        table { border-collapse: collapse; width: 100%; border-spacing: 0; border-top: 1px solid #1f2937; border-left: 1px solid #1f2937; }
+        th, td { border-right: 1px solid #1f2937; border-bottom: 1px solid #1f2937; padding: 0; vertical-align: middle !important; }
+        th { background: #111; padding: 8px 4px; font-weight: bold; font-size: 0.85rem; color: #9ca3af; vertical-align: middle; }
+        .modal-overlay { background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(2px); }
+
+        .print-only-cell { display: none; }
+        .screen-only-cell { display: table-cell; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #ff6600; }
+
+        .save-status {
+            position: fixed; bottom: 20px; right: 20px; z-index: 100;
+            background: rgba(255, 165, 0, 0.1); border: 1px solid rgba(255, 165, 0, 0.3);
+            color: #fb923c; font-size: 12px; padding: 4px 12px; border-radius: 4px;
+            font-family: monospace; opacity: 0; transition: opacity 0.5s ease; pointer-events: none;
+        }
+        .save-status.visible { opacity: 1; }
+
+        /* 点选模式高亮 */
+        .picking-candidate { cursor: crosshair !important; transition: background 0.1s; }
+        .picking-candidate:hover { background-color: rgba(255, 102, 0, 0.2) !important; outline: 1px dashed #ff6600; box-shadow: inset 0 0 15px rgba(255,102,0,0.2); }
+        .picking-source { border: 1px solid #ff6600 !important; background-color: rgba(255, 102, 0, 0.1); box-shadow: 0 0 10px rgba(255,102,0,0.3); }
+
+        /* 打印样式控制 */
+        .print-visible-fixed { display: none; }
+
+        @media print {
+            /* 1. 设置标准的物理页边距 */
+            @page { 
+                size: A4 portrait; 
+                /* 上 15mm, 右 10mm, 下 20mm, 左 10mm */
+                margin: 15mm 10mm 20mm 10mm; 
+                
+                /* 尝试使用 CSS 计数器 (仅部分浏览器支持) */
+                counter-increment: page;
+            }
+            
+            /* 2. 移除 body 的 padding，完全依赖 @page margin */
+            html, body { 
+                width: 100%; 
+                height: auto !important; 
+                min-height: 0 !important;
+                background-color: white !important; 
+                color: black !important; 
+                margin: 0 !important; 
+                padding: 0 !important; /* 关键修改：取消 padding */
+                font-family: Arial, sans-serif !important; 
+                box-sizing: border-box; 
+            }
+
+            .app-container { 
+                display: block !important; 
+                height: auto !important; 
+                min-height: 0 !important;
+                overflow: visible !important;
+            }
+            
+            header.sticky { position: static !important; border: none !important; background: transparent !important; } 
+            .sidebar-container, .no-print, .no-print-col, .save-status { display: none !important; }
+            .main-content { 
+                width: 100% !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                height: auto !important;
+            }
+            
+            .screen-only-cell { display: none !important; }
+            .print-only-cell { display: table-cell !important; }
+            table { border: 2px solid #000 !important; margin-bottom: 5px !important; width: 100% !important; }
+            th, td { border: 1px solid #000 !important; color: #000 !important; padding: 4px 4px !important; } /* 略微减小 padding 使表格更紧凑 */
+            th { background-color: transparent !important; color: #000 !important; border-bottom: 2px solid #000 !important; }
+            .tactical-input { border: none !important; font-size: 9pt !important; color: black !important; } 
+            .print-align-center, .print-align-center input { text-align: center !important; }
+            .print-align-right, .print-align-right input { text-align: right !important; padding-right: 8px !important; }
+            
+            /* Header 样式调整：更紧凑 */
+            header { 
+                border-bottom: 2px solid #000 !important; 
+                margin-bottom: 10px !important; 
+                padding-bottom: 5px !important;
+            }
+            .total-card { border: 2px solid #000 !important; background: transparent !important; color: black !important; padding: 10px !important; margin-bottom: 10px !important; }
+            .total-card * { color: black !important; }
+            .print-text-wrap { white-space: pre-wrap; word-break: break-all; }
+            
+            /* 页面顶部公司信息行 */
+            .doc-header-row { border-bottom: 1px solid #000 !important; margin-bottom: 10px !important; padding-bottom: 5px !important; }
+            
+            /* 避免表格断页问题 */
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+        }
+        .file-input-wrapper { position: relative; overflow: hidden; display: inline-block; cursor: pointer; }
+        .file-input-wrapper input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        const Icon = ({ name, size = 14, className = "" }) => {
+            const icons = {
+                Trash: <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" />,
+                Plus: <path d="M12 5v14M5 12h14" />,
+                Printer: <><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></>,
+                Reset: <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12" />,
+                InsertRow: <path d="M3 12h18M12 3v18" />,
+                Edit: <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />,
+                Folder: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
+                Undo: <path d="M9 14L4 9l5-5" />, 
+                Redo: <path d="M15 14l5-5-5-5" />, 
+                Restore: <path d="M3 10h10a8 8 0 0 1 8 8v2M3 10l6 6M3 10l6-6" />,
+                SaveTemplate: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />,
+                Filter: <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
+                Search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
+                Excel: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></>,
+                Upload: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>,
+                Check: <polyline points="20 6 9 17 4 12" />,
+                Save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />,
+                Warn: <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01" />,
+                Chart: <><path d="M3 3v18h18" /><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" /></>
+            };
+            return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{icons[name] || <circle cx="12" cy="12" r="10" />}</svg>;
+        };
+
+        const AutoResizeTextarea = ({ value, onChange, placeholder, className, style, onKeyDown, isNumeric, id, onBlur }) => {
+            const textareaRef = useRef(null);
+            useEffect(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.style.height = 'auto';
+                    textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+                }
+            }, [value]);
+            return (
+                <textarea
+                    ref={textareaRef} id={id} value={value} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder} onBlur={onBlur}
+                    className={`tactical-input ${className}`} rows={1} style={style}
+                    type={isNumeric ? "number" : "text"}
+                />
+            );
+        };
+
+        const EditableLabel = ({ id, defaultText, defaultColor = "#6b7280", defaultSize = 12, className, onEdit, align="left", inline=false }) => {
+            const config = onEdit.getConfig(id) || { text: defaultText, color: defaultColor, size: defaultSize };
+            const displayClass = inline ? "inline-block w-auto" : "block w-full"; 
+            return (
+                <span 
+                    onDoubleClick={() => onEdit.openModal(id, config)}
+                    className={`cursor-pointer hover:underline decoration-dashed decoration-gray-500 ${className} ${displayClass}`}
+                    style={{ color: config.color, fontSize: `${config.size}px`, textAlign: align }}
+                    title="双击修改"
+                >
+                    {config.text}
+                </span>
+            );
+        };
+
+        const EditModal = ({ isOpen, onClose, onSave, initialData, id }) => {
+            const [text, setText] = useState('');
+            const [color, setColor] = useState('#ffffff');
+            const [size, setSize] = useState(14);
+            const [dateValue, setDateValue] = useState('');
+
+            // 判断是否为日期编辑
+            const isDateConfig = id === 'doc_header_right';
+
+            useEffect(() => {
+                if (isOpen && initialData) { 
+                    setText(initialData.text); 
+                    setColor(initialData.color); 
+                    setSize(initialData.size); 
+                    
+                    if (isDateConfig) {
+                        // 尝试从文本中提取日期
+                        const match = initialData.text.match(/\d{4}-\d{2}-\d{2}/);
+                        if (match) {
+                            setDateValue(match[0]);
+                        } else {
+                             const d = new Date();
+                             const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                             setDateValue(today);
+                        }
+                    }
+                }
+            }, [isOpen, initialData, id, isDateConfig]);
+
+            const handleDateChange = (e) => {
+                const newDate = e.target.value;
+                setDateValue(newDate);
+                setText(`日期: ${newDate}`);
+            };
+
+            const setToday = () => {
+                const d = new Date();
+                const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                setDateValue(today);
+                setText(`日期: ${today}`);
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center modal-overlay no-print">
+                    <div className="bg-[#111] border border-[#ff6600] p-6 w-96 shadow-2xl">
+                        <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Icon name="Edit" className="text-[#ff6600]" /> 样式编辑器</h3>
+                        <div className="space-y-4">
+                            {isDateConfig ? (
+                                <div>
+                                    <label className="text-gray-500 text-xs">选择日期</label>
+                                    <div className="flex gap-2 mb-2">
+                                        <input 
+                                            type="date" 
+                                            value={dateValue} 
+                                            onChange={handleDateChange} 
+                                            className="w-full bg-[#222] text-white p-2 text-sm border border-gray-700 rounded"
+                                        />
+                                        <button 
+                                            onClick={setToday} 
+                                            className="px-4 py-2 bg-[#ff6600] hover:bg-[#ff8800] text-black text-xs font-bold rounded whitespace-nowrap transition-colors"
+                                        >
+                                            今天
+                                        </button>
+                                    </div>
+                                    <div className="text-gray-500 text-xs">预览: {text}</div>
+                                </div>
+                            ) : (
+                                <div><label className="text-gray-500 text-xs">内容</label><input value={text} onChange={e => setText(e.target.value)} className="w-full bg-[#222] text-white p-2 text-sm border border-gray-700"/></div>
+                            )}
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="text-gray-500 text-xs">颜色</label><div className="flex gap-2"><input type="color" value={color} onChange={e => setColor(e.target.value)} className="h-8 w-8"/><input value={color} readOnly className="w-full bg-[#222] text-gray-300 p-1 text-xs"/></div></div>
+                                <div><label className="text-gray-500 text-xs">字号</label><input type="number" value={size} onChange={e => setSize(Number(e.target.value))} className="w-full bg-[#222] text-white p-2 text-sm border border-gray-700"/></div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={onClose} className="px-4 py-1.5 text-xs text-gray-400">取消</button>
+                            <button onClick={() => onSave({ text, color, size })} className="px-4 py-1.5 bg-[#ff6600] text-black font-bold text-xs">保存</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ExcelInput = ({ id, value, displayValue, onChange, onBlur, onKeyDown, className, style, placeholder, activeFormulaField, onFormulaPick, setActiveFormulaField, myFieldId }) => {
+            const isSource = activeFormulaField && 
+                             activeFormulaField.sectionId === myFieldId.sectionId && 
+                             activeFormulaField.itemId === myFieldId.itemId && 
+                             activeFormulaField.field === myFieldId.field;
+                             
+            const isCandidate = activeFormulaField && !isSource;
+            const [isFocused, setIsFocused] = useState(false);
+
+            const handleMouseDown = (e) => {
+                if (isCandidate) {
+                    e.preventDefault(); 
+                    e.stopPropagation();
+                    // 传递 Reference 字符串
+                    onFormulaPick(`R[${myFieldId.sectionId}|${myFieldId.itemId}|${myFieldId.field}]`); 
+                }
+            };
+
+            const handleChange = (e) => {
+                const val = e.target.value;
+                onChange(e);
+                if (val && val.toString().trim().startsWith('=')) {
+                    if (!isSource) setActiveFormulaField(myFieldId); 
+                } else {
+                    if (isSource) setActiveFormulaField(null); 
+                }
+            };
+
+            const handleLocalBlur = (e) => {
+                setIsFocused(false);
+                onBlur(e);
+            };
+
+            const handleFocus = (e) => {
+                setIsFocused(true);
+                if (!activeFormulaField) e.target.select();
+            }
+
+            const showValue = isFocused ? value : (displayValue !== undefined && displayValue !== null && displayValue !== '') ? displayValue : value;
+
+            return (
+                <input 
+                    id={id}
+                    value={showValue}
+                    onChange={handleChange}
+                    onBlur={handleLocalBlur}
+                    onKeyDown={onKeyDown}
+                    onMouseDown={handleMouseDown}
+                    onFocus={handleFocus}
+                    className={`${className} ${isCandidate ? 'picking-candidate' : ''} ${isSource ? 'picking-source' : ''}`}
+                    style={style}
+                    placeholder={placeholder}
+                    autoComplete="off"
+                />
+            );
+        }
+
+        const useUndoRedo = (initialState) => {
+            const [past, setPast] = useState([]);
+            const [present, setPresent] = useState(initialState);
+            const [future, setFuture] = useState([]);
+            const undo = useCallback(() => {
+                if (past.length === 0) return;
+                const previous = past[past.length - 1];
+                const newPast = past.slice(0, past.length - 1);
+                setFuture([present, ...future]);
+                setPresent(previous);
+                setPast(newPast);
+            }, [past, present, future]);
+            const redo = useCallback(() => {
+                if (future.length === 0) return;
+                const next = future[0];
+                const newFuture = future.slice(1);
+                setPast([...past, present]);
+                setPresent(next);
+                setFuture(newFuture);
+            }, [past, present, future]);
+            const set = useCallback((newPresent) => {
+                if (newPresent === present) return;
+                setPast(prev => [...prev.slice(-99), present]); 
+                setPresent(newPresent);
+                setFuture([]);
+            }, [present]);
+            const setInitial = (newPresent) => { setPresent(newPresent); setPast([]); setFuture([]); }
+            return [present, set, undo, redo, past.length > 0, future.length > 0, setInitial];
+        };
+
+        function App() {
+            // 定义管理费用的默认结构
+            const getManagementSection = () => ({
+                id: 'sec_mgmt',
+                title: '管理费用',
+                items: [
+                    { id: 'mgmt_1', name: '工程直接费', unit: '元', qty: 0, price: 0, remark: '' },
+                    { id: 'mgmt_2', name: '工程管理费', unit: '元', qty: 7, price: 0, remark: '' },
+                    { id: 'mgmt_3', name: '项目经理服务费', unit: '元', qty: 5, price: 0, remark: '' },
+                    { id: 'mgmt_4', name: '施工总造价', unit: '元', qty: 0, price: 0, remark: '' },
+                    { id: 'mgmt_5', name: '设计师跟踪服务费', unit: '元', qty: 0, price: 0, remark: '' }, 
+                    { id: 'mgmt_6', name: '税金', unit: '元', qty: 1, price: 0, remark: '' } 
+                ]
+            });
+
+            // 工具函数：离线计算项目总价
+            const calculateProjectValuation = (sections) => {
+                if (!sections || !Array.isArray(sections)) return 0;
+                // 改为使用 ID 查找
+                const mgmtSec = sections.find(s => s.id === 'sec_mgmt');
+                
+                // 1. 计算直接费
+                let directFee = 0;
+                sections.forEach(s => {
+                    if (s.id !== 'sec_mgmt') {
+                        s.items.forEach(i => {
+                            let val = 0;
+                            const mVal = i.manualTotal;
+                            if (mVal !== undefined && mVal !== "" && !isNaN(parseFloat(mVal))) {
+                                val = parseFloat(mVal);
+                            } else {
+                                val = (parseFloat(i.qty) || 0) * (parseFloat(i.price) || 0);
+                            }
+                            directFee += val;
+                        });
+                    }
+                });
+
+                if (!mgmtSec) return directFee; // 无管理费板块
+
+                // 2. 有管理费板块，模拟计算
+                const getRate = (idx, defaultRate) => {
+                    if (mgmtSec.items[idx] && mgmtSec.items[idx].qty !== undefined && mgmtSec.items[idx].qty !== "") {
+                        return parseFloat(mgmtSec.items[idx].qty);
+                    }
+                    if (mgmtSec.items[idx] && (mgmtSec.items[idx].qty === 0 || mgmtSec.items[idx].qty === "")) {
+                        return 0; // Explicit 0 or empty means 0
+                    }
+                    return defaultRate;
+                };
+
+                // 百分比除以100
+                const mgmtRate = getRate(1, 7) / 100;
+                const pmRate = getRate(2, 5) / 100;
+                const taxRate = getRate(5, 1) / 100;
+
+                const mgmtFee = directFee * mgmtRate;
+                const pmFee = directFee * pmRate;
+                const constructionTotal = directFee + mgmtFee + pmFee;
+
+                let designerFee = 0;
+                if (mgmtSec.items[4]) {
+                    const i = mgmtSec.items[4];
+                    if (i.manualTotal !== undefined && i.manualTotal !== "" && !isNaN(parseFloat(i.manualTotal))) {
+                        designerFee = parseFloat(i.manualTotal);
+                    } else {
+                        designerFee = (parseFloat(i.qty) || 0) * (parseFloat(i.price) || 0);
+                    }
+                }
+
+                const taxAmount = (constructionTotal + designerFee) * taxRate;
+                return constructionTotal + designerFee + taxAmount;
+            };
+
+            const getInitialDataFromCSV = () => [
+                { id: 'sec_1', title: '一、示例工程分类', items: [{ id: '1', name: '示例项目', unit: 'M2', qty: 0.00, price: 0.00, remark: '请开始您的编辑' }] },
+                getManagementSection()
+            ];
+
+            const createDefaultProject = (name = "新装修预算项目", templateData = null) => {
+                let sections = templateData ? JSON.parse(JSON.stringify(templateData.sections)) : getInitialDataFromCSV();
+                // 确保新项目包含管理费用 (Check ID)
+                if (!sections.some(s => s.id === 'sec_mgmt')) {
+                    sections.push(getManagementSection());
+                } else {
+                     sections = sections.map(s => {
+                         if(s.id === 'sec_mgmt') {
+                             return {
+                                 ...s,
+                                 items: s.items.map((item, idx) => {
+                                     if(idx === 1 && (item.qty === 0 || item.qty === undefined)) return {...item, qty: 7};
+                                     if(idx === 1 && item.qty < 1 && item.qty > 0) return {...item, qty: parseFloat((item.qty * 100).toFixed(2))};
+                                     
+                                     if(idx === 2 && (item.qty === 0 || item.qty === undefined)) return {...item, qty: 5};
+                                     if(idx === 2 && item.qty < 1 && item.qty > 0) return {...item, qty: parseFloat((item.qty * 100).toFixed(2))};
+
+                                     if(idx === 5 && (item.qty === 0 || item.qty === undefined)) return {...item, qty: 1};
+                                     if(idx === 5 && item.qty < 1 && item.qty > 0) return {...item, qty: parseFloat((item.qty * 100).toFixed(2))};
+                                     
+                                     return item;
+                                 })
+                             }
+                         }
+                         return s;
+                     });
+                }
+                return {
+                    id: Date.now().toString(),
+                    name: name,
+                    cachedTotal: 0, 
+                    data: {
+                        sections: sections,
+                        projectTitle: name,
+                        labelConfigs: templateData ? JSON.parse(JSON.stringify(templateData.labelConfigs)) : {}
+                    },
+                    updatedAt: Date.now()
+                };
+            };
+
+            const [projects, setProjects] = useState([]);
+            const [activeProjectId, setActiveProjectId] = useState(null);
+            const [deletedProjects, setDeletedProjects] = useState([]);
+            const [defaultTemplate, setDefaultTemplate] = useState(null);
+            const [isFilterOpen, setIsFilterOpen] = useState(false);
+            const [filterText, setFilterText] = useState("");
+            const [projectTitle, setProjectTitle] = useState("");
+            const [labelConfigs, setLabelConfigs] = useState({});
+            const [modalState, setModalState] = useState({ isOpen: false, id: null, initialData: null });
+            const [isLoaded, setIsLoaded] = useState(false);
+            const [saveStatus, setSaveStatus] = useState(false);
+            const [sections, setSections, undo, redo, canUndo, canRedo, setSectionsInitial] = useUndoRedo([]);
+            const [isSummaryView, setIsSummaryView] = useState(false); 
+            const [summaryTitle, setSummaryTitle] = useState("项目汇总表");
+            
+            const [activeFormulaField, setActiveFormulaField] = useState(null);
+
+            // 获取系统日期格式 YYYY-MM-DD
+            const getSystemDate = () => {
+                const d = new Date();
+                return `日期: ${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            };
+
+            useEffect(() => {
+                let embeddedData = null;
+                const embeddedScript = document.getElementById('initial-data');
+                if (embeddedScript && embeddedScript.textContent && embeddedScript.textContent.trim() !== 'null') {
+                    try { embeddedData = JSON.parse(embeddedScript.textContent); } catch(e) {}
+                }
+                let localData = null;
+                try { localData = JSON.parse(localStorage.getItem('tactical_cost_print_final_img')); } catch (e) {}
+
+                let loadedTemplate = null;
+                if (embeddedData && embeddedData.defaultTemplate) {
+                     loadedTemplate = embeddedData.defaultTemplate;
+                } else {
+                     const savedTemplate = localStorage.getItem('tactical_cost_template');
+                     if (savedTemplate) { try { loadedTemplate = JSON.parse(savedTemplate); } catch (e) {} }
+                }
+                if (loadedTemplate) setDefaultTemplate(loadedTemplate);
+                
+                if (embeddedData && embeddedData.summaryTitle) setSummaryTitle(embeddedData.summaryTitle);
+
+                let initialProjects = [];
+                let initialActiveId = '';
+                
+                // 处理数据加载优先级
+                const embeddedTime = embeddedData?.projects?.find(p => p.id === embeddedData.activeProjectId)?.updatedAt || 0;
+                const localTime = localData?.projects?.find(p => p.id === localData.activeProjectId)?.updatedAt || 0;
+
+                if (localData && localTime > embeddedTime) {
+                    initialProjects = localData.projects;
+                    initialActiveId = localData.activeProjectId;
+                } else if (embeddedData) {
+                    initialProjects = embeddedData.projects;
+                    initialActiveId = embeddedData.activeProjectId;
+                }
+
+                if (initialProjects.length === 0) {
+                    const def = createDefaultProject("默认预算项目", loadedTemplate);
+                    initialProjects = [def];
+                    initialActiveId = def.id;
+                }
+                
+                setProjects(initialProjects);
+                setActiveProjectId(initialActiveId);
+                const activeProject = initialProjects.find(p => p.id === initialActiveId) || initialProjects[0];
+                if (activeProject) {
+                    let initialSections = activeProject.data.sections;
+                    // Check by ID
+                    if (!initialSections.some(s => s.id === 'sec_mgmt')) {
+                        initialSections = [...initialSections, getManagementSection()];
+                    } else {
+                         initialSections = initialSections.map(s => {
+                             if(s.id === 'sec_mgmt') {
+                                 return {
+                                     ...s,
+                                     items: s.items.map((item, idx) => {
+                                         if((idx === 1 || idx === 2 || idx === 5) && item.qty < 1 && item.qty > 0) {
+                                             return {...item, qty: parseFloat((item.qty * 100).toFixed(2))};
+                                         }
+                                         return item;
+                                     })
+                                 }
+                             }
+                             return s;
+                         });
+                    }
+                    setSectionsInitial(initialSections);
+                    setProjectTitle(activeProject.data.projectTitle);
+                    
+                    // 自动设置日期
+                    const configs = activeProject.data.labelConfigs || {};
+                    // 如果没有设置过或者之前是旧的带"/ Date"格式，更新为系统日期
+                    if (!configs['doc_header_right'] || configs['doc_header_right'].text.includes('/ Date')) {
+                        configs['doc_header_right'] = { 
+                            ...configs['doc_header_right'], 
+                            text: getSystemDate(),
+                            color: "#9ca3af",
+                            size: 14 
+                        };
+                    }
+                    setLabelConfigs(configs);
+                }
+                setIsLoaded(true);
+            }, []);
+
+            const saveTimeoutRef = useRef(null);
+
+            // --- 全局公式计算引擎 (支持引用) ---
+            const dataMap = useMemo(() => {
+                const map = {};
+                sections.forEach(s => {
+                    s.items.forEach(i => {
+                        const stdTotal = (parseFloat(i.qty) || 0) * (parseFloat(i.price) || 0);
+                        map[`${s.id}|${i.id}|qty`] = i.qty;
+                        map[`${s.id}|${i.id}|price`] = i.price;
+                        map[`${s.id}|${i.id}|manualTotal`] = (i.manualTotal !== undefined && i.manualTotal !== "") ? i.manualTotal : stdTotal;
+                    });
+                });
+                return map;
+            }, [sections]);
+
+            const evaluateExpression = (expr, visited = new Set()) => {
+                if (typeof expr === 'number') return expr;
+                if (!expr || typeof expr !== 'string') return 0;
+                if (!isNaN(Number(expr))) return Number(expr);
+                const cleanExpr = expr.trim().startsWith('=') ? expr.trim().substring(1) : expr;
+                let resolvedExpr = cleanExpr;
+                const refRegex = /R\[(.*?)\|(.*?)\|(.*?)\]/g;
+                if (visited.has(expr)) return 0; 
+                visited.add(expr);
+                resolvedExpr = resolvedExpr.replace(refRegex, (match, secId, itemId, field) => {
+                    const key = `${secId}|${itemId}|${field}`;
+                    const rawVal = dataMap[key];
+                    return evaluateExpression(rawVal, new Set(visited)); 
+                });
+                const safeExpr = resolvedExpr.replace(/[^0-9+\-*/.() ]/g, '');
+                try {
+                    let result = new Function('return ' + safeExpr)();
+                    if (isNaN(result) || !isFinite(result)) return 0;
+                    return Math.round(result * 100) / 100;
+                } catch (e) { return 0; }
+            };
+
+            const calculatedValues = useMemo(() => {
+                const results = {};
+                Object.keys(dataMap).forEach(key => {
+                    results[key] = evaluateExpression(dataMap[key]);
+                });
+                return results;
+            }, [dataMap]);
+
+            // --- 特殊板块计算逻辑：管理费用 (Moved up & ID Based) ---
+            const managementCalc = useMemo(() => {
+                const mgmtSec = sections.find(s => s.id === 'sec_mgmt'); // Use ID
+                if (!mgmtSec) return null;
+                let directFee = 0;
+                sections.forEach(s => {
+                    if (s.id !== 'sec_mgmt') { // Use ID
+                        s.items.forEach(i => {
+                            const val = calculatedValues[`${s.id}|${i.id}|manualTotal`];
+                            const t = (i.manualTotal !== undefined && i.manualTotal !== "") ? (val || 0) : (calculatedValues[`${s.id}|${i.id}|qty`]*calculatedValues[`${s.id}|${i.id}|price`] || 0);
+                            directFee += t;
+                        });
+                    }
+                });
+                
+                let mgmtRateVal = 7;
+                if(mgmtSec.items[1] && mgmtSec.items[1].qty !== undefined && mgmtSec.items[1].qty !== "") {
+                    mgmtRateVal = parseFloat(mgmtSec.items[1].qty);
+                } else if(mgmtSec.items[1] && (mgmtSec.items[1].qty === 0 || mgmtSec.items[1].qty === "")) {
+                    mgmtRateVal = 0;
+                }
+                const mgmtRate = mgmtRateVal / 100;
+
+                let pmRateVal = 5;
+                if(mgmtSec.items[2] && mgmtSec.items[2].qty !== undefined && mgmtSec.items[2].qty !== "") {
+                    pmRateVal = parseFloat(mgmtSec.items[2].qty);
+                } else if(mgmtSec.items[2] && (mgmtSec.items[2].qty === 0 || mgmtSec.items[2].qty === "")) {
+                    pmRateVal = 0;
+                }
+                const pmRate = pmRateVal / 100;
+
+                const mgmtFee = directFee * mgmtRate;
+                const pmFee = directFee * pmRate;
+                const constructionTotal = directFee + mgmtFee + pmFee;
+                
+                const designerItem = mgmtSec.items[4]; 
+                let designerFee = 0;
+                if (designerItem) {
+                    const manualVal = calculatedValues[`${mgmtSec.id}|${designerItem.id}|manualTotal`];
+                    designerFee = (designerItem.manualTotal !== undefined && designerItem.manualTotal !== "") 
+                        ? (manualVal || 0)
+                        : (calculatedValues[`${mgmtSec.id}|${designerItem.id}|qty`] * calculatedValues[`${mgmtSec.id}|${designerItem.id}|price`] || 0);
+                }
+                
+                const taxItem = mgmtSec.items[5]; 
+                let taxRateVal = 1;
+                if (taxItem) {
+                    if (taxItem.qty === "" || taxItem.qty === null || taxItem.qty === undefined) {
+                        taxRateVal = 0;
+                    } else {
+                        const parsed = parseFloat(taxItem.qty);
+                        if (!isNaN(parsed)) taxRateVal = parsed;
+                        else taxRateVal = 0;
+                    }
+                }
+                const taxRate = taxRateVal / 100;
+
+                const taxAmount = (constructionTotal + designerFee) * taxRate;
+                const grandTotal = constructionTotal + designerFee + taxAmount;
+                return { directFee, mgmtFee, pmFee, constructionTotal, designerFee, taxRate, taxAmount, grandTotal };
+            }, [sections, calculatedValues]);
+
+            const totals = useMemo(() => { 
+                let grand = 0; 
+                const secT = {}; 
+                sections.forEach(s => { 
+                    if (s.id === 'sec_mgmt') { // Use ID
+                         secT[s.id] = managementCalc ? managementCalc.grandTotal : 0;
+                    } else {
+                        let st = 0; 
+                        s.items.forEach(i => {
+                            const qty = calculatedValues[`${s.id}|${i.id}|qty`] || 0;
+                            const price = calculatedValues[`${s.id}|${i.id}|price`] || 0;
+                            const manualVal = calculatedValues[`${s.id}|${i.id}|manualTotal`];
+                            const itemTotal = (i.manualTotal !== undefined && i.manualTotal !== "") ? (manualVal || 0) : (qty * price);
+                            st += itemTotal;
+                        }); 
+                        secT[s.id] = st; 
+                    }
+                }); 
+                if (managementCalc) {
+                    grand = managementCalc.grandTotal;
+                } else {
+                    grand = Object.values(secT).reduce((a, b) => a + b, 0);
+                }
+                return { grand, secT }; 
+            }, [sections, calculatedValues, managementCalc]);
+
+            // Save logic
+            useEffect(() => {
+                if (!isLoaded || !activeProjectId) return;
+                if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+                saveTimeoutRef.current = setTimeout(() => {
+                    const newProjects = projects.map(p => {
+                        if (p.id === activeProjectId) {
+                            return { 
+                                ...p, 
+                                name: projectTitle, 
+                                cachedTotal: totals.grand, // 确保保存时缓存最新的总金额
+                                data: { sections, projectTitle, labelConfigs }, 
+                                updatedAt: Date.now() 
+                            };
+                        }
+                        return p;
+                    });
+                    setProjects(newProjects);
+                    localStorage.setItem('tactical_cost_print_final_img', JSON.stringify({ projects: newProjects, activeProjectId }));
+                    const currentData = { projects: newProjects, activeProjectId, defaultTemplate, summaryTitle }; 
+                    const scriptTag = document.getElementById('initial-data');
+                    if (scriptTag) scriptTag.textContent = JSON.stringify(currentData);
+                    setSaveStatus(true);
+                    setTimeout(() => setSaveStatus(false), 2000);
+                }, 500); 
+                return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+            }, [sections, projectTitle, labelConfigs, activeProjectId, isLoaded, defaultTemplate, summaryTitle, totals.grand]);
+
+            const saveFileToDisk = async (isTemplate = false) => {
+                if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+                let templateToSave = defaultTemplate;
+                if (isTemplate) {
+                    templateToSave = { sections, labelConfigs };
+                    setDefaultTemplate(templateToSave); 
+                    localStorage.setItem('tactical_cost_template', JSON.stringify(templateToSave));
+                }
+                const currentData = { 
+                    projects: projects.map(p => p.id === activeProjectId ? { 
+                        ...p, 
+                        name: projectTitle, 
+                        cachedTotal: totals.grand, 
+                        data: { sections, projectTitle, labelConfigs }, 
+                        updatedAt: Date.now() 
+                    } : p), 
+                    activeProjectId,
+                    defaultTemplate: templateToSave,
+                    summaryTitle
+                }; 
+                
+                const clone = document.documentElement.cloneNode(true);
+                const scripts = clone.querySelectorAll('script');
+                scripts.forEach(s => {
+                    if (!s.hasAttribute('src') && s.getAttribute('type') !== 'text/babel' && s.id !== 'initial-data') {
+                        s.remove();
+                    }
+                });
+
+                const closingScript = '<' + '/script>'; 
+                const dataStr = JSON.stringify(currentData);
+                const safeDataStr = dataStr.replace(new RegExp(closingScript, 'g'), '<\\\\/script>');
+                
+                const dataScript = clone.querySelector('#initial-data');
+                if (dataScript) dataScript.textContent = safeDataStr;
+                else {
+                    const newScript = document.createElement('script');
+                    newScript.id = 'initial-data';
+                    newScript.type = 'application/json';
+                    newScript.textContent = safeDataStr;
+                    clone.querySelector('head').appendChild(newScript);
+                }
+
+                let htmlContent = clone.outerHTML;
+                const finalContent = `<!DOCTYPE html>\n${htmlContent}`;
+                const blob = new Blob([finalContent], {type: 'text/html;charset=utf-8'});
+                
+                const defaultName = isTemplate 
+                    ? `${projectTitle || '装修预算'}_模板.html` 
+                    : `${projectTitle || '装修预算'}.html`;
+
+                try {
+                    if (window.showSaveFilePicker) {
+                        const handle = await window.showSaveFilePicker({ suggestedName: defaultName, types: [{ description: 'HTML File', accept: {'text/html': ['.html']} }] });
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        if (isTemplate) alert("成功！\n\n当前表格已设为新模板。");
+                        else alert("文件保存成功！");
+                        return;
+                    }
+                } catch (err) { if (err.name !== 'AbortError') console.warn("SaveFilePicker failed", err); }
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = defaultName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            };
+
+            const handleNavigation = (e, currentSectionIndex, currentItemIndex, currentField) => {
+                const fields = ['name', 'unit', 'qty', 'price', 'manualTotal', 'remark'];
+                const currentFieldIndex = fields.indexOf(currentField);
+                if (currentFieldIndex === -1) return;
+
+                let targetSectionIndex = currentSectionIndex;
+                let targetItemIndex = currentItemIndex;
+                let targetFieldIndex = currentFieldIndex;
+                let handled = false;
+
+                if (e.key === 'ArrowRight') {
+                    if (targetFieldIndex < fields.length - 1) { targetFieldIndex++; handled = true; }
+                    else if (targetItemIndex < sections[targetSectionIndex].items.length - 1) { targetItemIndex++; targetFieldIndex = 0; handled = true; }
+                    else if (targetSectionIndex < sections.length - 1) {
+                         targetSectionIndex++; targetItemIndex = 0; targetFieldIndex = 0; handled = true;
+                    }
+                } else if (e.key === 'ArrowLeft') {
+                    if (targetFieldIndex > 0) { targetFieldIndex--; handled = true; }
+                    else if (targetItemIndex > 0) { targetItemIndex--; targetFieldIndex = fields.length - 1; handled = true; }
+                    else if (targetSectionIndex > 0) {
+                         targetSectionIndex--; 
+                         targetItemIndex = sections[targetSectionIndex].items.length - 1; 
+                         targetFieldIndex = fields.length - 1; 
+                         handled = true;
+                    }
+                } else if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey)) {
+                    if (targetItemIndex < sections[targetSectionIndex].items.length - 1) { targetItemIndex++; handled = true; }
+                    else if (targetSectionIndex < sections.length - 1) { targetSectionIndex++; targetItemIndex = 0; handled = true; }
+                } else if (e.key === 'ArrowUp') {
+                    if (targetItemIndex > 0) { targetItemIndex--; handled = true; }
+                    else if (targetSectionIndex > 0) { targetSectionIndex--; targetItemIndex = sections[targetSectionIndex].items.length - 1; handled = true; }
+                }
+
+                if (handled) {
+                    e.preventDefault();
+                    const targetSection = sections[targetSectionIndex];
+                    if (targetSection && targetSection.items[targetItemIndex]) {
+                        const targetId = `input-${targetSection.id}-${targetSection.items[targetItemIndex].id}-${fields[targetFieldIndex]}`;
+                        setTimeout(() => {
+                            const element = document.getElementById(targetId);
+                            if (element) { element.focus(); if (element.select) element.select(); }
+                        }, 0);
+                    }
+                }
+            };
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                        saveFileToDisk(false);
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [sections, projectTitle, labelConfigs, activeProjectId, projects, defaultTemplate, summaryTitle]);
+
+            const handleFormulaPick = (pickedRefCode) => {
+                if (activeFormulaField && pickedRefCode) {
+                    const { sectionId, itemId, field } = activeFormulaField;
+                    const targetSection = sections.find(s => s.id === sectionId);
+                    const targetItem = targetSection?.items.find(i => i.id === itemId);
+                    
+                    if (targetItem) {
+                        let currentValue = targetItem[field] ? targetItem[field].toString() : "";
+                        updateItem(sectionId, itemId, field, currentValue + pickedRefCode);
+                        
+                        setTimeout(() => {
+                            const el = document.getElementById(`input-${sectionId}-${itemId}-${field}`);
+                            if(el) {
+                                el.focus();
+                                const len = el.value.length;
+                                el.setSelectionRange(len, len);
+                            }
+                        }, 10);
+                    }
+                }
+            };
+
+            const handleInputChange = (secId, itemId, field, newValue) => {
+                updateItem(secId, itemId, field, newValue);
+                if (newValue && newValue.toString().startsWith('=')) {
+                    setActiveFormulaField({ sectionId: secId, itemId: itemId, field: field });
+                } else {
+                     if (activeFormulaField && activeFormulaField.itemId === itemId) setActiveFormulaField(null);
+                }
+            };
+
+            const handleBlur = (secId, itemId, field, val, currentQty, currentPrice) => {
+                 setActiveFormulaField(null);
+                 if (field === 'manualTotal' && (val === '' || val === null)) {
+                     updateItem(secId, itemId, 'manualTotal', undefined);
+                 }
+            };
+
+            const handleExportExcel = async () => {
+                const rows = [];
+                rows.push(["阶段/分类", "项目名称", "单位", "数量", "单价", "合计", "备注"]);
+                sections.forEach(sec => {
+                    sec.items.forEach(item => {
+                        const qty = calculatedValues[`${sec.id}|${item.id}|qty`] || 0;
+                        const price = calculatedValues[`${sec.id}|${item.id}|price`] || 0;
+                        const manualVal = calculatedValues[`${sec.id}|${item.id}|manualTotal`];
+                        const total = (item.manualTotal !== undefined && item.manualTotal !== "") ? manualVal : (qty * price);
+
+                        rows.push([sec.title, item.name, item.unit, qty, price, total, item.remark]);
+                    });
+                });
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "装修预算表");
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const blob = new Blob([wbout], { type: 'application/octet-stream' });
+                const defaultName = `${projectTitle || '装修预算'}.xlsx`;
+                try {
+                    if (window.showSaveFilePicker) {
+                        const handle = await window.showSaveFilePicker({ suggestedName: defaultName, types: [{ description: 'Excel File', accept: {'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']} }] });
+                        const writable = await handle.createWritable(); await writable.write(blob); await writable.close(); alert("Excel导出成功！"); return;
+                    }
+                } catch (err) {}
+                const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = defaultName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            };
+
+            const handleImportExcel = (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const bstr = evt.target.result; const wb = XLSX.read(bstr, {type: 'binary'});
+                    const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws, {header: 1});
+                    const newSectionsMap = {}; let currentSectionOrder = [];
+                    for (let i = 1; i < data.length; i++) {
+                        const row = data[i]; if (!row || !row[1]) continue;
+                        const category = row[0] || "未分类";
+                        if (!newSectionsMap[category]) { 
+                            // 如果分类名称是“管理费用”，赋予特定ID以保持功能
+                            const secId = category === '管理费用' ? 'sec_mgmt' : `sec_${Date.now()}_${i}`;
+                            newSectionsMap[category] = { id: secId, title: category, items: [] }; 
+                            currentSectionOrder.push(category); 
+                        }
+                        newSectionsMap[category].items.push({ id: `item_${Date.now()}_${i}`, name: row[1], unit: row[2]||"项", qty: row[3]||0, price: row[4]||0, remark: row[6]||"" });
+                    }
+                    const importedSections = currentSectionOrder.map(cat => newSectionsMap[cat]);
+                    // Check by ID
+                    if (!importedSections.some(s => s.id === 'sec_mgmt')) {
+                        importedSections.push(getManagementSection());
+                    }
+                    if (importedSections.length > 0 && confirm(`读取到 ${importedSections.length} 个分类，是否覆盖？`)) setSections(importedSections);
+                };
+                reader.readAsBinaryString(file); e.target.value = null;
+            };
+
+            const handleSwitchProject = (id) => { setIsSummaryView(false); const target = projects.find(p => p.id === id); if (target) { setActiveProjectId(id); setSectionsInitial(target.data.sections); setProjectTitle(target.data.projectTitle); setLabelConfigs(target.data.labelConfigs); } };
+            const handleAddProject = () => { setIsSummaryView(false); const newProject = createDefaultProject(`新项目 ${projects.length + 1}`, defaultTemplate); setProjects([...projects, newProject]); setActiveProjectId(newProject.id); setSectionsInitial(newProject.data.sections); setProjectTitle(newProject.data.projectTitle); setLabelConfigs(newProject.data.labelConfigs); };
+            const handleDeleteProject = (id) => { if (projects.length <= 1) return alert("保留一个项目"); if (!confirm("删除？")) return; setDeletedProjects(prev => [...prev.slice(-99), projects.find(p=>p.id===id)]); const newProjects = projects.filter(p => p.id !== id); setProjects(newProjects); if(id===activeProjectId){const next=newProjects[0];setActiveProjectId(next.id);setSectionsInitial(next.data.sections);setProjectTitle(next.data.projectTitle);setLabelConfigs(next.data.labelConfigs);} };
+            const handleUndoDelete = () => { if(deletedProjects.length===0)return; const p = deletedProjects[deletedProjects.length-1]; setProjects([...projects,p]); setDeletedProjects(d=>d.slice(0,-1)); setActiveProjectId(p.id); setSectionsInitial(p.data.sections); setProjectTitle(p.data.projectTitle); setLabelConfigs(p.data.labelConfigs); };
+            
+            // --- 修复点：添加 handleModalSave 定义 ---
+            const handleModalSave = (newData) => { setLabelConfigs({ ...labelConfigs, [modalState.id]: newData }); setModalState({ isOpen: false, id: null, initialData: null }); };
+
+            const editHandlers = { getConfig: (id) => labelConfigs[id], openModal: (id, config) => setModalState({ isOpen: true, id, initialData: config }) };
+            const updateItem = (secId, itemId, field, val) => { setSections(prev => prev.map(sec => sec.id !== secId ? sec : { ...sec, items: sec.items.map(item => item.id !== itemId ? item : { ...item, [field]: val }) })); };
+            const insertItem = (secId, index) => { const newItem = { id: Date.now().toString(), name: '', unit: '项', qty: 0, price: 0, remark: '' }; setSections(prev => prev.map(sec => { if (sec.id !== secId) return sec; const items = [...sec.items]; items.splice(index === null ? items.length : index + 1, 0, newItem); return { ...sec, items }; })); };
+            const deleteItem = (secId, itemId) => { if(!confirm("删除？")) return; setSections(prev => prev.map(sec => sec.id !== secId ? sec : { ...sec, items: sec.items.filter(i => i.id !== itemId) })); };
+            
+            // 修正：新建项目在“管理费用”上方
+            const addSection = () => {
+                const newSec = { id: 'sec_'+Date.now(), title: '新工程阶段', items: [] };
+                // Use ID to find index
+                const mgmtIndex = sections.findIndex(s => s.id === 'sec_mgmt');
+                if (mgmtIndex !== -1) {
+                    const newSections = [...sections];
+                    newSections.splice(mgmtIndex, 0, newSec);
+                    setSections(newSections);
+                } else {
+                    setSections([...sections, newSec]);
+                }
+            };
+            
+            const reset = () => { if(confirm("确定重置？\n将恢复到您最近一次“设为模板”时的状态。")) { if(defaultTemplate){setSectionsInitial(JSON.parse(JSON.stringify(defaultTemplate.sections)));setLabelConfigs(JSON.parse(JSON.stringify(defaultTemplate.labelConfigs)));}else{setSectionsInitial(getInitialDataFromCSV());setLabelConfigs({});}} };
+            
+            // --- 计算总价逻辑 ---
+            const allProjectsTotal = useMemo(() => {
+                let sum = 0;
+                projects.forEach(p => {
+                    if (p.id === activeProjectId) {
+                        sum += totals.grand;
+                    } else {
+                        // 修复：优先使用缓存的总价，确保金额一致
+                        if (p.cachedTotal !== undefined) {
+                            sum += p.cachedTotal;
+                        } else {
+                            sum += calculateProjectValuation(p.data.sections);
+                        }
+                    }
+                });
+                return sum;
+            }, [projects, activeProjectId, totals.grand]);
+
+            const digitUppercase = (n) => { const digit=['零','壹','贰','叁','肆','伍','陆','柒','捌','玖']; const unit=[['元','万','亿'],['','拾','佰','仟']]; let s=''; for(let i=0;i<2;i++)s+=(digit[Math.floor(Math.abs(n)*10*Math.pow(10,i))%10]+['角','分'][i]).replace(/零./,''); s=s||'整'; let nInt=Math.floor(Math.abs(n)); for(let i=0;i<unit[0].length&&nInt>0;i++){let p='';for(let j=0;j<unit[1].length&&nInt>0;j++){p=digit[nInt%10]+unit[1][j]+p;nInt=Math.floor(nInt/10);}s=p.replace(/(零.)*零$/,'').replace(/^$/,'零')+unit[0][i]+s;} return (n<0?'欠':'')+s.replace(/(零.)*零元/,'元').replace(/(零.)+/g,'零').replace(/^整$/, '零元整'); };
+            const filteredSections = useMemo(() => { if (!filterText.trim()) return sections; const lower = filterText.toLowerCase(); return sections.map(s => { const match = s.title.toLowerCase().includes(lower); const items = s.items.filter(i => i.name.toLowerCase().includes(lower) || i.remark.toLowerCase().includes(lower)); if (items.length > 0) return { ...s, items }; else if (match) return s; return null; }).filter(Boolean); }, [sections, filterText]);
+
+            const renderSummaryTable = () => {
+                return (
+                    <div className="bg-[#080808] print:bg-white p-4">
+                        <div className="total-card mb-8 bg-[#0a0a0a] border border-gray-800 p-6 flex justify-between items-center relative overflow-hidden group print:border-black print:bg-white print:p-2 print:mb-4">
+                            <div className="absolute right-0 top-0 p-32 bg-[#ff6600] rounded-full filter blur-[100px] opacity-5 no-print"></div>
+                            <div>
+                                <div className="flex flex-col md:flex-row md:items-baseline gap-4">
+                                    <span className="text-4xl md:text-5xl font-black text-white font-mono tracking-tighter print:text-black"><span className="text-[#ff6600] text-2xl align-top mr-1 print:text-black">¥</span>{allProjectsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <span className="text-gray-500 print:text-black text-sm md:text-base font-bold tracking-wider mt-2 md:mt-0 md:ml-4 border-t border-gray-800 pt-1 md:border-t-0 md:pt-0">{allProjectsTotal > 0 ? `( ${digitUppercase(allProjectsTotal)} )` : ''}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* 移除了内部重复的标题输入框 */}
+
+                        <table className="w-full">
+                            <thead>
+                                <tr>
+                                    <th>序号</th>
+                                    <th>项目名称</th>
+                                    <th className="text-right">项目总价 (RMB)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {projects.map((p, idx) => {
+                                    let pTotal = 0;
+                                    if (p.id === activeProjectId) {
+                                         pTotal = totals.grand; 
+                                    } else {
+                                        // 修复：优先使用缓存的总价，确保金额一致
+                                        if (p.cachedTotal !== undefined) {
+                                            pTotal = p.cachedTotal;
+                                        } else {
+                                            pTotal = calculateProjectValuation(p.data.sections);
+                                        }
+                                    }
+                                    return (
+                                        <tr key={p.id} className="hover:bg-[#111] cursor-pointer" onClick={() => handleSwitchProject(p.id)}>
+                                            <td className="text-center p-2 text-gray-500">{idx + 1}</td>
+                                            <td className="p-2 font-bold text-white print:text-black">{p.name}</td>
+                                            <td className="p-2 text-right font-mono font-bold text-[#ff6600] print:text-black">
+                                                ¥ {pTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="flex min-h-screen bg-[#050505] app-container">
+                    <div className={`save-status ${saveStatus ? 'visible' : ''}`}>
+                        <span className="flex items-center gap-2"><Icon name="Warn" size={12}/> 数据已缓存 (Ctrl+S 另存为)</span>
+                    </div>
+
+                    <div className="w-64 bg-[#0a0a0a] border-r border-gray-800 flex flex-col h-screen fixed left-0 top-0 z-40 sidebar-container no-print">
+                        <div className="p-4 border-b border-gray-800 flex items-center gap-2">
+                            <span className="text-[#ff6600] font-black text-xl">///</span>
+                            <span className="font-bold text-white tracking-widest">PROJECTS</span>
+                        </div>
+                        
+                        <div onClick={() => setIsSummaryView(true)} className={`mx-2 mt-2 p-3 text-sm cursor-pointer border rounded-md flex items-center gap-3 transition-all ${isSummaryView ? 'border-[#ff6600] bg-[#1a1a1a] text-white' : 'border-transparent text-gray-400 hover:bg-[#111]'}`}>
+                             <Icon name="Chart" size={16} className={isSummaryView ? 'text-[#ff6600]' : 'text-gray-500'} />
+                             <span className="font-bold">📊 项目汇总表</span>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                            {projects.map(p => (
+                                <div key={p.id} onClick={() => handleSwitchProject(p.id)} className={`p-3 text-sm cursor-pointer border rounded-md flex items-center justify-between group transition-all ${!isSummaryView && activeProjectId === p.id ? 'border-[#ff6600] bg-[#1a1a1a] text-white' : 'border-transparent text-gray-400 hover:bg-[#111]'}`}>
+                                    <div className="flex items-center gap-3 overflow-hidden w-full"><Icon name="Folder" size={16} className={!isSummaryView && activeProjectId === p.id ? 'text-[#ff6600]' : 'text-gray-600'} /><span className="truncate font-sans font-medium">{p.name || '未命名项目'}</span></div>
+                                    {projects.length > 1 && <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-500"><Icon name="Trash" size={14} /></button>}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="p-4 border-t border-gray-800 space-y-3 bg-[#0f0f0f]">
+                            <div className="border border-[#ff6600]/30 bg-[#1a1a1a] p-3 rounded-md">
+                                <div className="text-[10px] text-gray-500 font-mono mb-1 uppercase">All Projects Total</div>
+                                <div className="text-xl font-bold text-[#ff6600] font-mono">¥ {allProjectsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            </div>
+                            <button onClick={handleAddProject} className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-white text-xs font-bold rounded flex items-center justify-center gap-2"><Icon name="Plus" size={12} /> 新建项目</button>
+                            {deletedProjects.length > 0 && <button onClick={handleUndoDelete} className="w-full py-2 bg-[#221111] border border-red-900/30 text-red-400 text-xs font-bold rounded flex items-center justify-center gap-2"><Icon name="Restore" size={12} /> 撤销删除 ({deletedProjects.length})</button>}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 ml-64 p-4 md:p-8 pb-32 main-content transition-all">
+                        <div className="max-w-[1200px] mx-auto print:max-w-none">
+                            <EditModal isOpen={modalState.isOpen} onClose={() => setModalState({ ...modalState, isOpen: false })} onSave={handleModalSave} initialData={modalState.initialData} id={modalState.id}/>
+
+                            <header className="sticky top-0 z-50 bg-[#050505]/95 backdrop-blur-md mb-6 border-b border-gray-800 pb-4 pt-4 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-end gap-4 print:border-black transition-all duration-300">
+                                <div className="w-full">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-[#ff6600] font-black text-xl print:text-black">///</span>
+                                        {isSummaryView ? (
+                                            <input value={summaryTitle} onChange={e => setSummaryTitle(e.target.value)} className="bg-transparent text-2xl md:text-3xl font-bold text-white outline-none w-full md:w-auto focus:border-b border-[#ff6600] print:text-black" />
+                                        ) : (
+                                            <input value={projectTitle} onChange={e => setProjectTitle(e.target.value)} className="bg-transparent text-2xl md:text-3xl font-bold text-white outline-none w-full md:w-auto focus:border-b border-[#ff6600] print:text-black" />
+                                        )}
+                                        
+                                        {!isSummaryView && (
+                                            <div className="hidden md:flex items-center ml-4 px-3 py-1 bg-[#1a1a1a] border border-[#ff6600]/30 rounded text-[#ff6600] font-mono font-bold animate-pulse no-print">
+                                                <span className="text-xs text-gray-500 mr-2">TOTAL:</span>
+                                                <span>¥ {totals.grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Removed subtitle */}
+                                </div>
+                                <div className="flex flex-col gap-2 items-end no-print w-full md:w-auto">
+                                    <div className="flex gap-2 flex-wrap justify-end">
+                                        <button onClick={undo} disabled={!canUndo} className={`px-2 py-1.5 bg-[#1a1a1a] text-gray-300 rounded border border-gray-700/50 ${!canUndo && 'opacity-30'}`}><Icon name="Undo" /></button>
+                                        <button onClick={redo} disabled={!canRedo} className={`px-2 py-1.5 bg-[#1a1a1a] text-gray-300 rounded border border-gray-700/50 ${!canRedo && 'opacity-30'}`}><Icon name="Redo" /></button>
+                                        <div className="w-px bg-gray-700 mx-1"></div>
+                                        <button onClick={handleExportExcel} className="flex items-center gap-1 px-3 py-1.5 bg-green-900/30 text-green-400 text-xs font-bold rounded border border-green-800 hover:bg-green-800/50"><Icon name="Excel" /> 导出Excel</button>
+                                        <label className="file-input-wrapper flex items-center gap-1 px-3 py-1.5 bg-blue-900/30 text-blue-400 text-xs font-bold rounded border border-blue-800 hover:bg-blue-800/50">
+                                            <Icon name="Upload" /> 导入Excel
+                                            <input type="file" accept=".xlsx, .xls" onChange={handleImportExcel} />
+                                        </label>
+                                    </div>
+                                    <div className="flex gap-2 flex-wrap justify-end">
+                                        <button onClick={() => setIsFilterOpen(!isFilterOpen)} className={`flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded border ${isFilterOpen ? 'bg-[#ff6600] text-black border-[#ff6600]' : 'bg-[#1a1a1a] text-gray-300 border-gray-700/50'}`}><Icon name="Filter" /> 筛选</button>
+                                        <button onClick={() => window.print()} className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a1a] text-gray-300 text-xs font-bold rounded border border-gray-700/50 hover:text-[#ff6600]"><Icon name="Printer" /> 打印</button>
+                                        
+                                        <button onClick={() => saveFileToDisk(false)} className="flex items-center gap-2 px-3 py-1.5 bg-[#333] text-white text-xs font-bold rounded border border-gray-600 hover:bg-[#444] hover:border-gray-400 transition-all">
+                                            <Icon name="Save" /> 另存为(Ctrl+S)
+                                        </button>
+                                        
+                                        <button onClick={() => saveFileToDisk(true)} className="flex items-center gap-2 px-3 py-1.5 bg-[#ff6600] text-black text-xs font-bold rounded border border-[#ff6600] hover:bg-[#ff8800] hover:scale-105 transition-transform">
+                                            <Icon name="SaveTemplate" /> 设为模板
+                                        </button>
+
+                                        <button onClick={reset} className="flex items-center gap-2 px-3 py-1.5 bg-[#2a0a0a] text-red-400 text-xs font-bold rounded border border-red-900/30 hover:bg-red-900/30"><Icon name="Reset" /> 重置</button>
+                                    </div>
+                                </div>
+                            </header>
+
+                            {isSummaryView ? renderSummaryTable() : (
+                                <>
+                                    {/* 顶部页眉区域 (Header) */}
+                                    <div className="mb-4 p-4 border-b-2 border-dashed border-gray-800 print:border-none print:border-b-2 print:border-black print:mb-6 doc-header-row group relative">
+                                        <div className="flex justify-between items-end">
+                                            <EditableLabel id="doc_header_left" defaultText="公司名称 / Company Name" defaultSize={16} defaultColor="#9ca3af" className="font-bold print:text-black" onEdit={editHandlers} />
+                                            <EditableLabel id="doc_header_right" defaultText={getSystemDate()} defaultSize={14} defaultColor="#9ca3af" align="right" className="print:text-black" onEdit={editHandlers} />
+                                        </div>
+                                        <div className="absolute top-0 right-0 text-[10px] text-gray-600 opacity-0 group-hover:opacity-100 no-print pointer-events-none transition-opacity">双击编辑页眉 (Double Click to Edit Header)</div>
+                                    </div>
+
+                                    <div className="total-card mb-8 bg-[#0a0a0a] border border-gray-800 p-6 flex justify-between items-center relative overflow-hidden group print:border-black print:bg-white print:p-2 print:mb-4">
+                                        <div className="absolute right-0 top-0 p-32 bg-[#ff6600] rounded-full filter blur-[100px] opacity-5 no-print"></div>
+                                        <div>
+                                            {/* Removed PROJECT TOTAL ESTIMATE */}
+                                            <div className="flex flex-col md:flex-row md:items-baseline gap-4">
+                                                <span className="text-4xl md:text-5xl font-black text-white font-mono tracking-tighter print:text-black"><span className="text-[#ff6600] text-2xl align-top mr-1 print:text-black">¥</span>{totals.grand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                <span className="text-gray-500 print:text-black text-sm md:text-base font-bold tracking-wider mt-2 md:mt-0 md:ml-4 border-t border-gray-800 pt-1 md:border-t-0 md:pt-0">{totals.grand > 0 ? `( ${digitUppercase(totals.grand)} )` : ''}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {isFilterOpen && (
+                                        <div className="mb-4 p-2 bg-[#161616] border border-gray-800 flex items-center gap-2 no-print animate-fade-in">
+                                            <div className="text-gray-500"><Icon name="Search" size={16} /></div>
+                                            <input type="text" value={filterText} onChange={(e) => setFilterText(e.target.value)} placeholder="输入关键词筛选项目..." className="bg-transparent border-none outline-none text-white text-sm w-full placeholder-gray-600 font-mono" autoFocus/>
+                                            {filterText && <button onClick={() => setFilterText("")} className="text-gray-500 hover:text-white text-xs">清空</button>}
+                                        </div>
+                                    )}
+
+                                    <div className="bg-[#080808] print:bg-white">
+                                        <table className="w-full">
+                                            <colgroup><col width="5%" /><col width="35%" /><col width="6%" /><col width="8%" /><col width="10%" /><col width="10%" /><col width="auto" /><col width="60" className="no-print-col" /></colgroup>
+                                            <thead>
+                                                <tr>
+                                                    <th rowSpan="2"><EditableLabel id="th_idx" defaultText="序号" onEdit={editHandlers} align="center"/></th>
+                                                    <th rowSpan="2"><EditableLabel id="th_name" defaultText="工程项目名称" onEdit={editHandlers} align="center"/></th>
+                                                    <th rowSpan="2"><EditableLabel id="th_unit" defaultText="单位" onEdit={editHandlers} align="center"/></th>
+                                                    <th colSpan="3" style={{color: '#ff6600'}} className="print:text-black"><EditableLabel id="th_cost_main" defaultText="工程造价 (RMB)" defaultColor="#ff6600" onEdit={editHandlers} align="center" className="print:text-black"/></th>
+                                                    <th rowSpan="2"><EditableLabel id="th_remark" defaultText="备注说明" onEdit={editHandlers} align="center"/></th>
+                                                    <th rowSpan="2" className="no-print-col">操作</th>
+                                                </tr>
+                                                <tr>
+                                                    <th className="text-gray-400 print:text-black"><EditableLabel id="th_qty" defaultText="数量" onEdit={editHandlers} align="center"/></th>
+                                                    <th className="text-gray-400 print:text-black"><EditableLabel id="th_price" defaultText="单价" onEdit={editHandlers} align="center"/></th>
+                                                    <th className="text-gray-400 print:text-black"><EditableLabel id="th_total" defaultText="金额" onEdit={editHandlers} align="center"/></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredSections.map((section, secIndex) => {
+                                                    const isMgmt = section.id === 'sec_mgmt'; // Use ID check
+
+                                                    return (
+                                                    <React.Fragment key={section.id}>
+                                                        <tr>
+                                                            <td colSpan={8} className="screen-only-cell bg-[#161616] section-header">
+                                                                <div className="flex justify-between items-center p-2 pl-4 group">
+                                                                    <input value={section.title} onChange={e => setSections(prev => prev.map(s => s.id === section.id ? {...s, title: e.target.value} : s))} className="font-bold text-[#ff6600] bg-transparent outline-none w-full"/>
+                                                                    <div className="flex items-center gap-2 no-print px-2">
+                                                                        {!isMgmt && <button onClick={() => insertItem(section.id, null)} className="text-green-500 hover:text-green-300 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="Plus" /></button>}
+                                                                        <button onClick={() => {if(confirm('删除阶段?')) setSections(sections.filter(s=>s.id!==section.id))}} className="text-gray-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="Trash" /></button>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td colSpan={7} className="print-only-cell bg-gray-100 section-header"><div className="p-2 pl-4"><input value={section.title} readOnly className="font-bold text-black bg-transparent outline-none w-full"/></div></td>
+                                                        </tr>
+                                                        {section.items.map((item, iIndex) => {
+                                                            const qty = calculatedValues[`${section.id}|${item.id}|qty`] || 0;
+                                                            const price = calculatedValues[`${section.id}|${item.id}|price`] || 0;
+                                                            const manualVal = calculatedValues[`${section.id}|${item.id}|manualTotal`];
+                                                            
+                                                            const isManual = item.manualTotal !== undefined && item.manualTotal !== "";
+                                                            let displayTotal = isManual ? (manualVal || 0) : (qty * price);
+
+                                                            // --- 管理费用特殊渲染逻辑 ---
+                                                            if (isMgmt) {
+                                                                let mgmtVal = 0;
+                                                                let isMerged = false;
+                                                                let colSpan = 1;
+                                                                let isRateRow = false; // 用于 1. 工程管理费, 2. 项目经理费, 5. 税金
+                                                                
+                                                                if (iIndex === 0) { // 工程直接费
+                                                                    isMerged = true;
+                                                                    colSpan = 3;
+                                                                    mgmtVal = managementCalc.directFee;
+                                                                } else if (iIndex === 1) { // 工程管理费 (可调系数)
+                                                                    isRateRow = true;
+                                                                    mgmtVal = managementCalc.mgmtFee;
+                                                                } else if (iIndex === 2) { // 项目经理服务费 (可调系数)
+                                                                    isRateRow = true;
+                                                                    mgmtVal = managementCalc.pmFee;
+                                                                } else if (iIndex === 3) { // 施工总造价
+                                                                    isMerged = true;
+                                                                    colSpan = 3;
+                                                                    mgmtVal = managementCalc.constructionTotal;
+                                                                } else if (iIndex === 5) { // 税金 (可调系数)
+                                                                    isRateRow = true;
+                                                                    mgmtVal = managementCalc.taxAmount;
+                                                                } else {
+                                                                    // 第5项（设计师）：正常显示
+                                                                }
+
+                                                                if (isMerged) {
+                                                                    // 全合并显示（纯数值）
+                                                                    return (
+                                                                        <tr key={item.id} className="hover:bg-[#0f0f0f] group print:hover:bg-transparent text-sm">
+                                                                            <td className="print-align-center text-center text-xs text-gray-600 font-mono print:text-black p-2">{iIndex + 1}</td>
+                                                                            <td className="p-1"><AutoResizeTextarea id={`input-${section.id}-${item.id}-name`} value={item.name} onChange={e => updateItem(section.id, item.id, 'name', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'name')} className="font-bold text-sm" /></td>
+                                                                            <td className="p-1"><AutoResizeTextarea id={`input-${section.id}-${item.id}-unit`} value={item.unit} onChange={e => updateItem(section.id, item.id, 'unit', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'unit')} className="text-center text-gray-500 print:text-black print-align-center text-sm" /></td>
+                                                                            <td colSpan={3} className="p-1 text-right font-mono font-bold text-[#ff6600] print:text-black border-l border-gray-800">
+                                                                                {mgmtVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                                            </td>
+                                                                            <td className="p-1 remark-cell"><AutoResizeTextarea id={`input-${section.id}-${item.id}-remark`} value={item.remark} onChange={e => updateItem(section.id, item.id, 'remark', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'remark')} className="text-gray-600 italic print:hidden text-xs" /><div className="hidden print:block text-xs print-text-wrap text-left text-gray-600 italic">{item.remark}</div></td>
+                                                                            <td className="text-center no-print-col"></td>
+                                                                        </tr>
+                                                                    );
+                                                                } else if (isRateRow) {
+                                                                    // 半合并显示（带系数输入）
+                                                                    return (
+                                                                         <tr key={item.id} className="hover:bg-[#0f0f0f] group print:hover:bg-transparent text-sm">
+                                                                            <td className="print-align-center text-center text-xs text-gray-600 font-mono print:text-black p-2">{iIndex + 1}</td>
+                                                                            <td className="p-1"><AutoResizeTextarea id={`input-${section.id}-${item.id}-name`} value={item.name} onChange={e => updateItem(section.id, item.id, 'name', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'name')} className="font-bold text-sm" /></td>
+                                                                            <td className="p-1"><AutoResizeTextarea id={`input-${section.id}-${item.id}-unit`} value={item.unit} onChange={e => updateItem(section.id, item.id, 'unit', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'unit')} className="text-center text-gray-500 print:text-black print-align-center text-sm" /></td>
+                                                                            <td colSpan={2} className="p-1 print-align-right">
+                                                                                <div className="flex items-center justify-end gap-2 w-full h-full pr-1">
+                                                                                    <input 
+                                                                                        id={`input-${section.id}-${item.id}-qty`}
+                                                                                        type="number"
+                                                                                        value={item.qty}
+                                                                                        onChange={e => updateItem(section.id, item.id, 'qty', e.target.value)}
+                                                                                        onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'qty')}
+                                                                                        className="text-right text-gray-400 text-sm tactical-input w-16 focus:text-[#ff6600]"
+                                                                                        placeholder="费率"
+                                                                                        step="0.01"
+                                                                                    />
+                                                                                    <span className="text-xs text-gray-600 whitespace-nowrap select-none">%</span>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="p-1 text-right font-mono font-bold text-[#ff6600] print:text-black">
+                                                                                {mgmtVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                                            </td>
+                                                                            <td className="p-1 remark-cell"><AutoResizeTextarea id={`input-${section.id}-${item.id}-remark`} value={item.remark} onChange={e => updateItem(section.id, item.id, 'remark', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'remark')} className="text-gray-600 italic print:hidden text-xs" /><div className="hidden print:block text-xs print-text-wrap text-left text-gray-600 italic">{item.remark}</div></td>
+                                                                            <td className="text-center no-print-col"></td>
+                                                                        </tr>
+                                                                    )
+                                                                }
+                                                            }
+                                                            // --- 结束特殊逻辑 ---
+
+                                                            return (
+                                                                <tr key={item.id} className="hover:bg-[#0f0f0f] group print:hover:bg-transparent text-sm">
+                                                                    <td className="print-align-center text-center text-xs text-gray-600 font-mono print:text-black p-2">{iIndex + 1}</td>
+                                                                    <td className="p-1"><AutoResizeTextarea id={`input-${section.id}-${item.id}-name`} value={item.name} onChange={e => updateItem(section.id, item.id, 'name', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'name')} className="font-bold text-sm" placeholder="..." /></td>
+                                                                    <td className="p-1"><AutoResizeTextarea id={`input-${section.id}-${item.id}-unit`} value={item.unit} onChange={e => updateItem(section.id, item.id, 'unit', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'unit')} className="text-center text-gray-500 print:text-black print-align-center text-sm" /></td>
+                                                                    
+                                                                    <td className="p-1 print-align-right">
+                                                                        <ExcelInput
+                                                                            id={`input-${section.id}-${item.id}-qty`}
+                                                                            value={item.qty}
+                                                                            displayValue={qty}
+                                                                            onChange={e => handleInputChange(section.id, item.id, 'qty', e.target.value)}
+                                                                            onBlur={e => handleBlur(section.id, item.id, 'qty', e.target.value)}
+                                                                            onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'qty')}
+                                                                            className="text-right text-sm tactical-input print:hidden"
+                                                                            style={{color: parseFloat(item.qty)===0?'#ff6600':'#9ca3af'}}
+                                                                            myFieldId={{sectionId: section.id, itemId: item.id, field: 'qty'}}
+                                                                            activeFormulaField={activeFormulaField}
+                                                                            setActiveFormulaField={setActiveFormulaField}
+                                                                            onFormulaPick={handleFormulaPick}
+                                                                        />
+                                                                        <div className="hidden print:block text-right pr-1">{parseFloat(item.qty) === 0 ? '' : qty}</div>
+                                                                    </td>
+                                                                    
+                                                                    <td className="p-1 print-align-right">
+                                                                        <ExcelInput
+                                                                            id={`input-${section.id}-${item.id}-price`}
+                                                                            value={item.price}
+                                                                            displayValue={price}
+                                                                            onChange={e => handleInputChange(section.id, item.id, 'price', e.target.value)}
+                                                                            onBlur={e => handleBlur(section.id, item.id, 'price', e.target.value)}
+                                                                            onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'price')}
+                                                                            className="text-right text-gray-400 text-sm tactical-input print:hidden"
+                                                                            myFieldId={{sectionId: section.id, itemId: item.id, field: 'price'}}
+                                                                            activeFormulaField={activeFormulaField}
+                                                                            setActiveFormulaField={setActiveFormulaField}
+                                                                            onFormulaPick={handleFormulaPick}
+                                                                        />
+                                                                        <div className="hidden print:block text-right pr-1">{price}</div>
+                                                                    </td>
+                                                                    
+                                                                    <td className="bg-[#0e0e0e] print:bg-transparent p-1 print-align-right">
+                                                                        <ExcelInput 
+                                                                            id={`input-${section.id}-${item.id}-manualTotal`}
+                                                                            value={isManual ? item.manualTotal : (displayTotal===0?'-':displayTotal.toFixed(2))} 
+                                                                            displayValue={displayTotal===0?'-':displayTotal.toFixed(2)}
+                                                                            onChange={e => handleInputChange(section.id, item.id, 'manualTotal', e.target.value)}
+                                                                            onBlur={e => handleBlur(section.id, item.id, 'manualTotal', e.target.value)}
+                                                                            onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'manualTotal')}
+                                                                            className="text-right text-sm tactical-input print:hidden"
+                                                                            style={{
+                                                                                color: isManual ? '#ff6600' : '#e5e7eb', 
+                                                                                fontWeight: 'bold',
+                                                                                fontFamily: 'monospace'
+                                                                            }}
+                                                                            placeholder="-"
+                                                                            myFieldId={{sectionId: section.id, itemId: item.id, field: 'manualTotal'}}
+                                                                            activeFormulaField={activeFormulaField}
+                                                                            setActiveFormulaField={setActiveFormulaField}
+                                                                            onFormulaPick={handleFormulaPick}
+                                                                        />
+                                                                        <div className="hidden print:block text-right pr-1 text-black font-bold">
+                                                                            {displayTotal === 0 ? '' : displayTotal.toFixed(2)}
+                                                                        </div>
+                                                                    </td>
+                                                                    
+                                                                    <td className="p-1 remark-cell">
+                                                                        <AutoResizeTextarea id={`input-${section.id}-${item.id}-remark`} value={item.remark} onChange={e => updateItem(section.id, item.id, 'remark', e.target.value)} onKeyDown={(e) => handleNavigation(e, secIndex, iIndex, 'remark')} className="text-gray-600 italic print:hidden text-xs" style={{ fontFamily: 'inherit' }} placeholder="..." />
+                                                                        <div className="hidden print:block text-xs print-text-wrap text-left text-gray-600 italic">{item.remark}</div>
+                                                                    </td>
+                                                                    <td className="text-center no-print-col"><div className="flex justify-center items-center gap-2 pt-1"><button onClick={() => insertItem(section.id, iIndex)} className="text-gray-600 hover:text-[#ff6600]"><Icon name="InsertRow" /></button><button onClick={() => deleteItem(section.id, item.id)} className="text-gray-700 hover:text-red-500"><Icon name="Trash" /></button></div></td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                        <tr className="subtotal-row">
+                                                            <td colSpan={8} className="screen-only-cell bg-[#0d0d0d] p-2 px-4"><div className="flex justify-end items-center gap-4 font-mono w-full text-lg"><EditableLabel id={`sub_${section.id}`} defaultText={isMgmt ? "施工总造价" : "本项小计:"} className="text-gray-500 w-auto" onEdit={editHandlers} align="right" inline={true} /><span className="text-white font-bold">¥ {totals.secT[section.id]?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div></td>
+                                                            <td colSpan={7} className="print-only-cell bg-white p-2 px-4"><div className="flex justify-end items-center gap-4 font-sans w-full text-lg"><EditableLabel id={`sub_${section.id}_print`} defaultText={isMgmt ? "施工总造价" : "本项小计:"} className="text-black w-auto mr-2" onEdit={editHandlers} align="right" inline={true} /><span className="text-black font-bold">¥ {totals.secT[section.id]?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div></td>
+                                                        </tr>
+                                                    </React.Fragment>
+                                                )})}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button onClick={addSection} className="w-full mt-4 py-3 border-2 border-dashed border-gray-800 text-gray-600 hover:border-[#ff6600] font-bold text-sm uppercase tracking-widest no-print">+ New Engineering Section</button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+</body></html>
